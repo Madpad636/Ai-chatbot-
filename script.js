@@ -19,75 +19,73 @@ const welcomeScreen = document.getElementById('welcome-screen');
 const voiceBtn      = document.getElementById('voice-btn');
 const quickReplies  = document.getElementById('quick-replies');
 
-// ── Bot reply generation (Wikipedia + friendly canned replies) ──
-async function getWikiSummary(query) {
+// ── Bot API Integration ──
+// Fetch messages from backend on load
+async function loadChatHistory() {
   try {
-    const searchUrl = `https://en.wikipedia.org/w/api.php?origin=*&action=query&format=json&list=search&utf8=1&srsearch=${encodeURIComponent(query)}&srlimit=1`;
-    const searchRes = await fetch(searchUrl);
-    if (!searchRes.ok) throw new Error('Wikipedia search failed');
-    const searchData = await searchRes.json();
-    const firstItem = searchData.query?.search?.[0];
-    if (!firstItem) return null;
-
-    const title = firstItem.title;
-    const extractUrl = `https://en.wikipedia.org/w/api.php?origin=*&action=query&format=json&prop=extracts&exintro=1&explaintext=1&exsentences=4&redirects=1&titles=${encodeURIComponent(title)}`;
-    const extractRes = await fetch(extractUrl);
-    if (!extractRes.ok) throw new Error('Wikipedia extract failed');
-    const extractData = await extractRes.json();
-    const page = Object.values(extractData.query.pages)[0];
-    if (!page || !page.extract) return null;
-
-    return `${title}: ${page.extract.replace(/\n+/g, ' ').trim()}`;
-  } catch (error) {
-    console.error('Wikipedia fetch error:', error);
-    return null;
+    const res = await fetch('/api/messages');
+    if (!res.ok) return;
+    const messages = await res.json();
+    if (messages.length > 0) {
+      welcomeScreen.style.display = 'none';
+      messages.forEach(msg => {
+        // use basic append logic but skip animations if desired, or just use existing appendMessage
+        const roleStr = msg.role === 'assistant' ? 'bot' : 'user';
+        // avoid re-saving in history array or just push
+        conversationHistory.push({ role: msg.role, content: msg.content });
+        appendMessageUI(roleStr, msg.content, new Date(msg.timestamp));
+      });
+    }
+  } catch (err) {
+    console.error('Failed to load history', err);
   }
 }
 
+// Wrapper for UI append without touching conversationHistory to avoid duplicate logic
+function appendMessageUI(role, text, dateObj = null) {
+  welcomeScreen.style.display = 'none';
+  const userName = usernameInput.value.trim() || 'You';
+  const initials = userName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || 'U';
+
+  const row = document.createElement('div');
+  row.className = `msg-row ${role}`;
+
+  const avatar = document.createElement('div');
+  avatar.className = 'msg-avatar';
+  avatar.textContent = role === 'bot' ? '✦' : initials;
+
+  const content = document.createElement('div');
+  content.className = 'msg-content';
+
+  const bubble = document.createElement('div');
+  bubble.className = 'bubble';
+  bubble.innerHTML = renderMarkdown(text);
+
+  const time = document.createElement('div');
+  time.className = 'msg-time';
+  
+  const d = dateObj || new Date();
+  time.textContent = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+  content.appendChild(bubble);
+  content.appendChild(time);
+  row.appendChild(avatar);
+  row.appendChild(content);
+  messagesEl.appendChild(row);
+  scrollBottom();
+  return row;
+}
+
+// Hook up the getBotReply to the backend
 async function getBotReply(input) {
-  const q = input.toLowerCase().trim();
-
-  // ONLY answer "I'm Aura" for the exact question
-  if (q === 'who are you?' || q === 'who are you') {
-    return 'I\'m Aura, your AI companion. I can chat, answer questions, and help with various topics. What would you like to know?';
-  }
-
-  // Quick replies buttons - use flexible matching
-  if (q.includes('tell me something') && q.includes('fascinating')) {
-    return 'Fascinating fact: Octopuses have three hearts and blue blood, and they can unscrew jar lids to escape— intelligence evolved independently from vertebrates!';
-  }
-  if (q.includes('how can i be more productive')) {
-    return 'Try the Pomodoro method (25 min work + 5 min break), remove distractions, and prioritize 3 tasks. Small batching and short breaks are powerful ways to maintain focus.';
-  }
-  if (q.includes('explain') && q.includes('machine learning')) {
-    return 'Machine learning is about teaching computers to find patterns in data and improve from experience, like training a model to recognize images by showing many examples.';
-  }
-
-  // Other patterns
-  if (q.includes('hello') || q.includes('hi')) return 'Hello! How can I help you today?';
-  if (q.includes('what is artificial intelligence') || q.includes('what is ai') || q === 'what is ai?' || q === 'what is artificial intelligence?') {
-    return 'AI is artificial intelligence — machines that can think, learn, and solve problems like humans. It includes smart systems that analyze data, make predictions, and automate tasks.';
-  }
-  if (q.includes('help me write clean python code') || q.includes('help me code')) {
-    return 'Sure! Start with clear variable names, small functions, and comments. Example:\n```python\n# greet user\ndef greet(name):\n    print(f"Hello, {name}!")\n\nif __name__ == "__main__":\n    greet("World")\n```\nUse linters like pylint and format with black for consistent style.';
-  }
-  if (q.includes('how are you')) return 'I\'m doing great, thanks! Ready to chat.';
-  if (q.includes('bye') || q.includes('goodbye')) return 'Goodbye! Have a wonderful day.';
-  if (q.includes('thank')) return 'You\'re welcome!';
-  if (q.includes('joke')) return 'Why did the computer go to therapy? It had too many bytes of emotional baggage!';
-  if (q.includes('weather')) return 'I don\'t have real-time data, but I hope it\'s nice where you are!';
-  if (q.includes('time')) return `It\'s ${formatTime()} (your device time).`;
-
-  // Try Wikipedia for any other question
-  try {
-    const wikiReply = await getWikiSummary(input);
-    if (wikiReply) return wikiReply;
-  } catch (err) {
-    // network, CORS or API issues fall back to friendly response
-    console.warn('Wikipedia lookup failed:', err);
-  }
-
-  return 'I couldn\'t find a direct wiki entry for that. Can you rephrase your question or ask about another topic?';
+  const response = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content: input })
+  });
+  if (!response.ok) throw new Error('API error');
+  const data = await response.json();
+  return data.content;
 }
 
 // ── Utility: format time ──
@@ -146,7 +144,12 @@ quickReplies.addEventListener('click', (e) => {
 });
 
 // ── Clear chat ──
-function clearChat() {
+async function clearChat() {
+  try {
+    await fetch('/api/messages', { method: 'DELETE' });
+  } catch (e) {
+    console.error('Failed to clear on server', e);
+  }
   conversationHistory = [];
   // Remove all message rows (keep welcome screen)
   const rows = messagesEl.querySelectorAll('.msg-row');
@@ -159,38 +162,7 @@ clearBtnTop.addEventListener('click', clearChat);
 
 // ── Append a message bubble ──
 function appendMessage(role, text) {
-  // Hide welcome screen
-  welcomeScreen.style.display = 'none';
-
-  const userName = usernameInput.value.trim() || 'You';
-  const initials = userName.split(' ').map(w => w[0]).join('').slice(0,2).toUpperCase() || 'U';
-
-  const row = document.createElement('div');
-  row.className = `msg-row ${role}`;
-
-  const avatar = document.createElement('div');
-  avatar.className = 'msg-avatar';
-  avatar.textContent = role === 'bot' ? '✦' : initials;
-
-  const content = document.createElement('div');
-  content.className = 'msg-content';
-
-  const bubble = document.createElement('div');
-  bubble.className = 'bubble';
-  // Simple markdown-lite: code blocks, inline code, bold
-  bubble.innerHTML = renderMarkdown(text);
-
-  const time = document.createElement('div');
-  time.className = 'msg-time';
-  time.textContent = formatTime();
-
-  content.appendChild(bubble);
-  content.appendChild(time);
-  row.appendChild(avatar);
-  row.appendChild(content);
-  messagesEl.appendChild(row);
-  scrollBottom();
-  return row;
+  return appendMessageUI(role, text);
 }
 
 // ── Typing indicator ──
@@ -352,3 +324,4 @@ initVoice();
 
 // ── Auto-focus input on load ──
 msgInput.focus();
+loadChatHistory();

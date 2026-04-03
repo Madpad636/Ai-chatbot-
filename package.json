@@ -1,0 +1,26 @@
+{
+  "name": "ai-chatbot-",
+  "version": "1.0.0",
+  "description": "",
+  "main": "script.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Madpad636/Ai-chatbot-.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/Madpad636/Ai-chatbot-/issues"
+  },
+  "homepage": "https://github.com/Madpad636/Ai-chatbot-#readme",
+  "dependencies": {
+    "cors": "^2.8.6",
+    "express": "^5.2.1",
+    "mathjs": "^15.1.1",
+    "sqlite3": "^6.0.1"
+  }
+}
